@@ -1,0 +1,8 @@
+{
+    "logRoot": "C:/logs",
+    "sendEmail": true,
+    "smtpServer": "mail.domain.com",
+    "smtpPort": 25,
+    "smtpEmailSendAs": "logging@domain.com",
+    "loggingEmailRecip": "recip@domain.com"
+}
