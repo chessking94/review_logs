@@ -11,6 +11,10 @@ import smtplib
 import sys
 import traceback
 
+import pandas as pd
+import pyodbc as sql
+import requests
+
 
 LEVEL_MAPPING = {
     'DEBUG': logging.DEBUG,
@@ -53,6 +57,82 @@ def list_to_html(data: list, has_header: bool = True) -> str:
     return html
 
 
+def insert_logsentries(data: list):
+    """
+    Assumption is the variable passed is a list of lists
+    This list of lists is formatted specifically like the entry_hdr variable from 'main' below
+    """
+
+    conn_str = get_config('connectionString_domainDB')
+    DBCONN = sql.connect(conn_str)
+
+    # drop the first element of the list, it's the header entry
+    data.pop(0)
+    rec_ct = len(data)
+
+    # iterate through remaining list entries, pre-process the values as needed, and perform the inserts
+    for entry in data:
+        scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(DBCONN, entry)
+        csr = DBCONN.cursor()
+        insert_qry = "INSERT INTO logs.Entries (ScriptName, FileDate, ScriptType, LogDate, LogTime, [Function], LevelID, [Message]) "
+        insert_qry = insert_qry + f"VALUES ('{scr_nm}', '{file_dte}', '{scr_typ}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
+        logging.debug(insert_qry)
+        csr.execute(insert_qry)
+        DBCONN.commit()
+
+    DBCONN.close()
+
+    return rec_ct
+
+
+def preprocess_logentry(conn, entry):
+    scr_nm = entry[0]
+
+    # reformat yyyymmddHHMMSS to yyyy-mm-dd HH:MM:SS
+    file_dte = entry[1]
+    file_dte = dt.datetime.strptime(file_dte, '%Y%m%d%H%M%S')
+    file_dte = file_dte.strftime('%Y-%m-%d %H:%M:%S')
+
+    scr_typ = 'Python'  # TODO: Come up with a way to open this to non-Python logs someday
+
+    # reformat yyyy-mm-dd HH:MM:SS,nnn to yyyy-mm-dd and HH:MM:SS.nnn
+    lg_dte = entry[2]
+    lg_dte, lg_tme = lg_dte.split()
+    lg_tme = lg_tme.replace(',', '.')
+
+    fn = entry[3]
+
+    # convert level name to level ID
+    lvl_id = get_levelid(conn, entry[4])
+
+    lg_msg = entry[5].replace("'", "''")
+
+    processed_entry = [scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg]
+    return processed_entry
+
+
+def get_levelid(conn, level):
+    id_qry = f"SELECT LevelID FROM logs.Levels WHERE Level = '{level}'"
+    logging.debug(id_qry)
+    df = pd.read_sql(id_qry, conn)
+    rtn = None
+    if len(df) == 0:
+        logging.critical(f"no record for level '{level}'")
+    else:
+        rtn = df.values[0][0]
+    return rtn
+
+
+def validate_notiftype(notiftype):
+    NOTIFTYPE_CHOICES = ['TELEGRAM', 'EMAIL', 'TEST']
+    notiftype = notiftype.upper()
+    if notiftype not in NOTIFTYPE_CHOICES:
+        if notiftype != '':
+            logging.warning(f'Invalid notiftype provided, ignoring|{notiftype}')
+        notiftype = None
+    return notiftype
+
+
 def main():
     script_name = Path(__file__).stem
     log_root = get_config('logRoot')
@@ -61,7 +141,7 @@ def main():
     log_name = f'{script_name}_{dte}.log'
     log_file = os.path.join(log_root, log_name)
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s\t%(funcName)s\t%(levelname)s\t%(message)s',
         handlers=[
             logging.FileHandler(log_file),
@@ -130,19 +210,32 @@ def main():
                 # can't move the file, it's in use. remove those previously added entries and move on with life
                 entry_list = [f for f in entry_list if f[0] != script_name or f[1] != log_timestamp]
 
-    # send an email if the log list has more entries than just the header
-    # TODO: Integrate with SendGrid
+    # write to db and send possible notification
     if len(entry_list) > 1:
-        send_email = get_config('sendEmail')
-        smtp_server = get_config('smtpServer')
-        smtp_port = get_config('smtpPort')
-        smtp_sendas = get_config('smtpEmailSendAs')
-        logging_recip = get_config('loggingEmailRecip')
-        logging_recip = logging_recip if isinstance(logging_recip, list) else [logging_recip]  # convert to a list if not already one
+        # insert log entries to a database table, start by row-by-row since in theory there won't be a ton
+        rec_ct = insert_logsentries(entry_list)
 
+        # figure out the notifications
+        notif_type = validate_notiftype(get_config('notificationType'))
         html = list_to_html(entry_list)
 
-        if send_email:
+        if notif_type == 'TELEGRAM':
+            tg_api_key = get_config('telegramAPIKey')
+            tg_id = get_config('telegramID')
+            tg_msg = f'A total of {rec_ct} potential problems have been identified in the HuntHome logs'
+            url = f'https://api.telegram.org/bot{tg_api_key}'
+            params = {'chat_id': tg_id, 'text': tg_msg}
+            with requests.post(url + '/sendMessage', params=params) as resp:
+                cde = resp.status_code
+                if cde != 200:
+                    logging.error(f'Log Review Telegram Notification Failed: Response Code {cde}')
+        elif notif_type == 'EMAIL':
+            smtp_server = get_config('smtpServer')
+            smtp_port = get_config('smtpPort')
+            smtp_sendas = get_config('smtpEmailSendAs')
+            logging_recip = get_config('loggingEmailRecip')
+            logging_recip = logging_recip if isinstance(logging_recip, list) else [logging_recip]  # convert to a list if not already one
+
             subject = f'Python Logging Summary - {dte[0:8]} {dte[8:10]}:{dte[10:12]}:{dte[12:14]}'
             body = html
 
@@ -154,11 +247,11 @@ def main():
 
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.sendmail(from_addr=smtp_sendas, to_addrs=logging_recip, msg=message.as_string())
-        else:
+        elif notif_type == 'TEST':
             with open(os.path.join(Path(__file__).parents[1], 'test.html'), 'w') as f:
                 f.write(html)
-
-        # TODO: Insert error entries to a database table
+        else:
+            pass  # do nothing
 
 
 if __name__ == '__main__':
