@@ -2,15 +2,13 @@ import csv
 import datetime as dt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import json
 import logging
 import os
 from pathlib import Path
-import re
 import smtplib
 import sys
-import traceback
 
+from automation import misc
 import pandas as pd
 import pyodbc as sql
 import requests
@@ -24,23 +22,7 @@ LEVEL_MAPPING = {
     'CRITICAL': logging.CRITICAL
 }
 NOTIFICATION_LEVEL = logging.WARNING
-
-
-def get_config(key):
-    filename = os.path.join(Path(__file__).parents[1], 'config.json')
-    with open(filename, 'r') as t:
-        key_data = json.load(t)
-    val = key_data.get(key)
-    return val
-
-
-def log_exception(exctype, value, tb):
-    write_val = {
-        'type': re.sub(r'<|>', '', str(exctype)),  # remove < and > since it messes up converting to HTML for potential email notifications
-        'description': str(value),
-        'traceback': str(traceback.format_tb(tb, 10))
-    }
-    logging.critical(str(write_val))
+CONFIG_FILE = os.path.join(Path(__file__).parents[1], 'config.json')
 
 
 def list_to_html(data: list, has_header: bool = True) -> str:
@@ -63,7 +45,7 @@ def insert_logsentries(data: list):
     This list of lists is formatted specifically like the entry_hdr variable from 'main' below
     """
 
-    conn_str = get_config('connectionString_domainDB')
+    conn_str = misc.get_config('connectionString_domainDB', CONFIG_FILE)
     DBCONN = sql.connect(conn_str)
 
     # drop the first element of the list, it's the header entry
@@ -135,7 +117,7 @@ def validate_notiftype(notiftype):
 
 def main():
     script_name = Path(__file__).stem
-    log_root = get_config('logRoot')
+    log_root = misc.get_config('logRoot', CONFIG_FILE)
 
     dte = dt.datetime.now().strftime('%Y%m%d%H%M%S')
     log_name = f'{script_name}_{dte}.log'
@@ -149,7 +131,7 @@ def main():
         ]
     )
 
-    sys.excepthook = log_exception  # force unhandled exceptions to write to the log file
+    sys.excepthook = misc.log_exception  # force unhandled exceptions to write to the log file
 
     log_list = [f for f in os.listdir(log_root) if os.path.isfile(os.path.join(log_root, f))]
 
@@ -216,12 +198,12 @@ def main():
         rec_ct = insert_logsentries(entry_list)
 
         # figure out the notifications
-        notif_type = validate_notiftype(get_config('notificationType'))
+        notif_type = validate_notiftype(misc.get_config('notificationType', CONFIG_FILE))
         html = list_to_html(entry_list)
 
         if notif_type == 'TELEGRAM':
-            tg_api_key = get_config('telegramAPIKey')
-            tg_id = get_config('telegramID')
+            tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
+            tg_id = misc.get_config('telegramID', CONFIG_FILE)
             tg_msg = f'A total of {rec_ct} potential problems have been identified in the HuntHome logs'
             url = f'https://api.telegram.org/bot{tg_api_key}'
             params = {'chat_id': tg_id, 'text': tg_msg}
@@ -230,10 +212,10 @@ def main():
                 if cde != 200:
                     logging.error(f'Log Review Telegram Notification Failed: Response Code {cde}')
         elif notif_type == 'EMAIL':
-            smtp_server = get_config('smtpServer')
-            smtp_port = get_config('smtpPort')
-            smtp_sendas = get_config('smtpEmailSendAs')
-            logging_recip = get_config('loggingEmailRecip')
+            smtp_server = misc.get_config('smtpServer', CONFIG_FILE)
+            smtp_port = misc.get_config('smtpPort', CONFIG_FILE)
+            smtp_sendas = misc.get_config('smtpEmailSendAs', CONFIG_FILE)
+            logging_recip = misc.get_config('loggingEmailRecip', CONFIG_FILE)
             logging_recip = logging_recip if isinstance(logging_recip, list) else [logging_recip]  # convert to a list if not already one
 
             subject = f'Python Logging Summary - {dte[0:8]} {dte[8:10]}:{dte[10:12]}:{dte[12:14]}'
