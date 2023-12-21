@@ -123,7 +123,7 @@ def main():
     log_name = f'{script_name}_{dte}.log'
     log_file = os.path.join(log_root, log_name)
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='%(asctime)s\t%(funcName)s\t%(levelname)s\t%(message)s',
         handlers=[
             logging.FileHandler(log_file),
