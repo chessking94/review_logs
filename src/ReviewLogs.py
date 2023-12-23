@@ -48,10 +48,6 @@ def insert_logsentries(data: list):
     conn_str = misc.get_config('connectionString_domainDB', CONFIG_FILE)
     DBCONN = sql.connect(conn_str)
 
-    # drop the first element of the list, it's the header entry
-    data.pop(0)
-    rec_ct = len(data)
-
     # iterate through remaining list entries, pre-process the values as needed, and perform the inserts
     for entry in data:
         scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(DBCONN, entry)
@@ -63,8 +59,6 @@ def insert_logsentries(data: list):
         DBCONN.commit()
 
     DBCONN.close()
-
-    return rec_ct
 
 
 def preprocess_logentry(conn, entry):
@@ -155,8 +149,9 @@ def main():
     """
 
     entry_list = []
-    entry_hdr = ['Script Name', 'File Timestamp', 'Log Timestamp', 'Script Function', 'Logging Level', 'Logging Message']
-    entry_list.append(entry_hdr)
+    notification_list = []
+    notification_hdr = ['Script Name', 'File Timestamp', 'Log Timestamp', 'Script Function', 'Logging Level', 'Logging Message']
+    notification_list.append(notification_hdr)
 
     for lf in log_list:
         log_orig = os.path.join(log_root, lf)
@@ -180,10 +175,11 @@ def main():
             with open(log_orig, mode='r', newline='\n') as logfile:
                 reader = csv.reader(logfile, delimiter='\t', quotechar='"')
                 for row in reader:
+                    entry = [script_name, log_timestamp, row[0], row[1], row[2], row[3]]
+                    entry_list.append(entry)
                     level_weight = LEVEL_MAPPING[row[2]]
                     if level_weight >= NOTIFICATION_LEVEL:
-                        entry = [script_name, log_timestamp, row[0], row[1], row[2], row[3]]
-                        entry_list.append(entry)
+                        notification_list.append(entry)
 
             # archive log file
             try:
@@ -191,15 +187,21 @@ def main():
             except PermissionError:
                 # can't move the file, it's in use. remove those previously added entries and move on with life
                 entry_list = [f for f in entry_list if f[0] != script_name or f[1] != log_timestamp]
+                notification_list = [f for f in notification_list if f[0] != script_name or f[1] != log_timestamp]
 
-    # write to db and send possible notification
-    if len(entry_list) > 1:
+    # write to db
+    if len(entry_list) > 0:
+        print(entry_list)
+        insert_logsentries(entry_list)
+
+    # send notification
+    if len(notification_list) > 1:
         # insert log entries to a database table, start by row-by-row since in theory there won't be a ton
-        rec_ct = insert_logsentries(entry_list)
+        rec_ct = len(notification_list) - 1
 
         # figure out the notifications
         notif_type = validate_notiftype(misc.get_config('notificationType', CONFIG_FILE))
-        html = list_to_html(entry_list)
+        html = list_to_html(notification_list)
 
         if notif_type == 'TELEGRAM':
             tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
