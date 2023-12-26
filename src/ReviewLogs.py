@@ -6,7 +6,6 @@ import logging
 import os
 from pathlib import Path
 import smtplib
-import sys
 
 from automation import misc
 import pandas as pd
@@ -23,20 +22,6 @@ LEVEL_MAPPING = {
 }
 NOTIFICATION_LEVEL = logging.WARNING
 CONFIG_FILE = os.path.join(Path(__file__).parents[1], 'config.json')
-
-
-def list_to_html(data: list, has_header: bool = True) -> str:
-    # https://stackoverflow.com/a/52785746
-    html = '<table border="1">'
-    for i, row in enumerate(data):
-        if has_header and i == 0:
-            tag = 'th'
-        else:
-            tag = 'td'
-        tds = ''.join('<{}>{}</{}>'.format(tag, cell, tag) for cell in row)
-        html += '<tr>{}</tr>'.format(tds)
-    html += '</table>'
-    return html
 
 
 def insert_logsentries(data: list):
@@ -111,21 +96,11 @@ def validate_notiftype(notiftype):
 
 def main():
     script_name = Path(__file__).stem
-    log_root = misc.get_config('logRoot', CONFIG_FILE)
+    log_file = misc.initiate_logging(script_name, CONFIG_FILE)
 
-    dte = dt.datetime.now().strftime('%Y%m%d%H%M%S')
-    log_name = f'{script_name}_{dte}.log'
-    log_file = os.path.join(log_root, log_name)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s\t%(funcName)s\t%(levelname)s\t%(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
-    sys.excepthook = misc.log_exception  # force unhandled exceptions to write to the log file
+    log_root = os.path.dirname(log_file)
+    log_name = os.path.basename(log_file)
+    dte = log_name.split('_')[1].split('.')[0]
 
     log_list = [f for f in os.listdir(log_root) if os.path.isfile(os.path.join(log_root, f))]
 
@@ -201,7 +176,7 @@ def main():
 
         # figure out the notifications
         notif_type = validate_notiftype(misc.get_config('notificationType', CONFIG_FILE))
-        html = list_to_html(notification_list)
+        html = misc.list_to_html(notification_list)
 
         if notif_type == 'TELEGRAM':
             tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
