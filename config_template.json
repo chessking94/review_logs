@@ -1,7 +1,7 @@
 {
     "logRoot": "C:/logs",
     "notificationType": "Telegram",
-    "connectionString_domainDB": "Driver={ODBC Driver 17 for SQL Server};Server=localhost;Database=domainDB;Trusted_Connection=yes;",
+    "connectionString_domainDB": "Driver={ODBC Driver 17 for SQL Server};Server=localhost;Database=domainDB;UID=username;PWD=password;",
     "telegramAPIKey": "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
     "telegramID": "9876543210",
     "smtpServer": "mail.domain.com",
