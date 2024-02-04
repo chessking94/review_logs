@@ -1,3 +1,4 @@
+import ast
 import csv
 import datetime as dt
 from email.mime.text import MIMEText
@@ -24,7 +25,7 @@ NOTIFICATION_LEVEL = logging.WARNING
 CONFIG_FILE = os.path.join(Path(__file__).parents[1], 'config.json')
 
 
-def insert_logsentries(data: list):
+def insert_logsentries(data: list) -> str:
     """
     Assumption is the variable passed is a list of lists
     This list of lists is formatted specifically like the entry_hdr variable from 'main' below
@@ -43,7 +44,10 @@ def insert_logsentries(data: list):
         csr.execute(insert_qry)
         DBCONN.commit()
 
+    err_msg = get_lasterror(DBCONN)
     DBCONN.close()
+
+    return err_msg
 
 
 def preprocess_logentry(conn, entry):
@@ -92,6 +96,37 @@ def validate_notiftype(notiftype):
             logging.warning(f'Invalid notiftype provided, ignoring|{notiftype}')
         notiftype = None
     return notiftype
+
+
+def get_lasterror(conn):
+    err_msg = None
+    lvl_id = get_levelid(conn, logging.getLevelName(NOTIFICATION_LEVEL))
+    typ_qry = f"""
+SELECT TOP 1
+ScriptName,
+Message
+
+FROM logs.Entries
+
+WHERE LevelID >= {lvl_id}
+AND LogDate = CONVERT(date, GETDATE())
+AND LogTime >= CONVERT(time, DATEADD(MINUTE, -5, GETDATE()))
+
+ORDER BY LogID DESC
+    """
+    logging.debug(typ_qry)
+    df = pd.read_sql(typ_qry, conn)
+    if len(df) > 0:
+        scr_name, msg = df.values[0]
+
+        try:
+            dict_err = ast.literal_eval(msg)
+            err_desc = dict_err['description']
+        except SyntaxError:
+            err_desc = msg
+
+        err_msg = f'Last error script: {scr_name}, Reason: {err_desc}'
+    return err_msg
 
 
 def main():
@@ -166,12 +201,10 @@ def main():
 
     # write to db
     if len(entry_list) > 0:
-        print(entry_list)
-        insert_logsentries(entry_list)
+        err_msg = insert_logsentries(entry_list)
 
     # send notification
     if len(notification_list) > 1:
-        # insert log entries to a database table, start by row-by-row since in theory there won't be a ton
         rec_ct = len(notification_list) - 1
 
         # figure out the notifications
@@ -182,6 +215,7 @@ def main():
             tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
             tg_id = misc.get_config('telegramID', CONFIG_FILE)
             tg_msg = f'A total of {rec_ct} potential problems have been identified in the HuntHome logs'
+            tg_msg = tg_msg + f'. {err_msg}'
             url = f'https://api.telegram.org/bot{tg_api_key}'
             params = {'chat_id': tg_id, 'text': tg_msg}
             with requests.post(url + '/sendMessage', params=params) as resp:
