@@ -109,8 +109,7 @@ Message
 FROM logs.Entries
 
 WHERE LevelID >= {lvl_id}
-AND LogDate = CONVERT(date, GETDATE())
-AND LogTime >= CONVERT(time, DATEADD(MINUTE, -5, GETDATE()))
+AND DateAdded >= DATEADD(MINUTE, -5, GETDATE())
 
 ORDER BY LogID DESC
     """
