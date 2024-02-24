@@ -10,8 +10,8 @@ import smtplib
 
 from automation import misc
 import pandas as pd
-import pyodbc as sql
 import requests
+import sqlalchemy as sa
 
 
 LEVEL_MAPPING = {
@@ -32,11 +32,16 @@ def insert_logsentries(data: list) -> str:
     """
 
     conn_str = misc.get_config('connectionString_domainDB', CONFIG_FILE)
-    DBCONN = sql.connect(conn_str)
+    connection_url = sa.engine.URL.create(
+        drivername='mssql+pyodbc',
+        query={"odbc_connect": conn_str}
+    )
+    engine = sa.create_engine(connection_url)
+    DBCONN = engine.connect().connection
 
     # iterate through remaining list entries, pre-process the values as needed, and perform the inserts
     for entry in data:
-        scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(DBCONN, entry)
+        scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(engine, entry)
         csr = DBCONN.cursor()
         insert_qry = "INSERT INTO logs.Entries (ScriptName, FileDate, ScriptType, LogDate, LogTime, [Function], LevelID, [Message]) "
         insert_qry = insert_qry + f"VALUES ('{scr_nm}', '{file_dte}', '{scr_typ}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
@@ -44,7 +49,7 @@ def insert_logsentries(data: list) -> str:
         csr.execute(insert_qry)
         DBCONN.commit()
 
-    err_msg = get_lasterror(DBCONN)
+    err_msg = get_lasterror(engine)
     DBCONN.close()
 
     return err_msg
