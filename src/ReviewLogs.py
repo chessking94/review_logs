@@ -51,11 +51,12 @@ def insert_logsentries(data: list) -> str:
 
     err_msg = get_lasterror(engine)
     DBCONN.close()
+    engine.dispose()
 
     return err_msg
 
 
-def preprocess_logentry(conn, entry):
+def preprocess_logentry(engine, entry):
     scr_nm = entry[0]
 
     # reformat yyyymmddHHMMSS to yyyy-mm-dd HH:MM:SS
@@ -73,7 +74,7 @@ def preprocess_logentry(conn, entry):
     fn = entry[3]
 
     # convert level name to level ID
-    lvl_id = get_levelid(conn, entry[4])
+    lvl_id = get_levelid(engine, entry[4])
 
     lg_msg = entry[5].replace("'", "''")
 
@@ -81,10 +82,10 @@ def preprocess_logentry(conn, entry):
     return processed_entry
 
 
-def get_levelid(conn, level):
+def get_levelid(engine, level):
     id_qry = f"SELECT LevelID FROM logs.Levels WHERE Level = '{level}'"
     logging.debug(id_qry)
-    df = pd.read_sql(id_qry, conn)
+    df = pd.read_sql(id_qry, engine)
     rtn = None
     if len(df) == 0:
         logging.critical(f"no record for level '{level}'")
@@ -103,9 +104,9 @@ def validate_notiftype(notiftype):
     return notiftype
 
 
-def get_lasterror(conn):
+def get_lasterror(engine):
     err_msg = None
-    lvl_id = get_levelid(conn, logging.getLevelName(NOTIFICATION_LEVEL))
+    lvl_id = get_levelid(engine, logging.getLevelName(NOTIFICATION_LEVEL))
     typ_qry = f"""
 SELECT TOP 1
 ScriptName,
@@ -119,7 +120,7 @@ AND DateAdded >= DATEADD(MINUTE, -5, GETDATE())
 ORDER BY LogID DESC
     """
     logging.debug(typ_qry)
-    df = pd.read_sql(typ_qry, conn)
+    df = pd.read_sql(typ_qry, engine)
     if len(df) > 0:
         scr_name, msg = df.values[0]
 
@@ -130,6 +131,7 @@ ORDER BY LogID DESC
             err_desc = msg
 
         err_msg = f'Last error script: {scr_name}, Reason: {err_desc}'
+
     return err_msg
 
 
