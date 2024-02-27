@@ -37,20 +37,20 @@ def insert_logsentries(data: list) -> str:
         query={"odbc_connect": conn_str}
     )
     engine = sa.create_engine(connection_url)
-    DBCONN = engine.connect().connection
+    conn = engine.connect().connection
 
     # iterate through remaining list entries, pre-process the values as needed, and perform the inserts
     for entry in data:
         scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(engine, entry)
-        csr = DBCONN.cursor()
+        csr = conn.cursor()
         insert_qry = "INSERT INTO logs.Entries (ScriptName, FileDate, ScriptType, LogDate, LogTime, [Function], LevelID, [Message]) "
         insert_qry = insert_qry + f"VALUES ('{scr_nm}', '{file_dte}', '{scr_typ}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
         logging.debug(insert_qry)
         csr.execute(insert_qry)
-        DBCONN.commit()
+        conn.commit()
 
     err_msg = get_lasterror(engine)
-    DBCONN.close()
+    conn.close()
     engine.dispose()
 
     return err_msg
