@@ -220,7 +220,7 @@ def main():
         if notif_type == 'TELEGRAM':
             tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
             tg_id = misc.get_config('telegramID', CONFIG_FILE)
-            tg_msg = f'A total of {rec_ct} potential problems have been identified in the HuntHome logs'
+            tg_msg = f'Error Notification: A total of {rec_ct} potential problems have been identified in the HuntHome logs'
             tg_msg = tg_msg + f'. {err_msg}'
             url = f'https://api.telegram.org/bot{tg_api_key}'
             params = {'chat_id': tg_id, 'text': tg_msg}
