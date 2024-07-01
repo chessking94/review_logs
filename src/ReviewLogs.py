@@ -252,6 +252,19 @@ def main():
         else:
             pass  # do nothing
 
+    # delete old log files older than the days defined in the config file
+    old_date = dt.datetime.now() - dt.timedelta(days=misc.get_config('retentionDays', CONFIG_FILE))
+    dir_list = [f for f in os.listdir(log_root) if os.path.isdir(os.path.join(log_root, f))]
+    for proc in dir_list:
+        proc_dir = os.path.join(log_root, proc)
+        proc_files = [
+            f for f in os.listdir(proc_dir)
+            if os.path.isfile(os.path.join(proc_dir, f))
+            and dt.datetime.fromtimestamp(os.path.getmtime(os.path.join(proc_dir, f))) < old_date
+        ]
+        for f in proc_files:
+            os.remove(os.path.join(proc_dir, f))
+
 
 if __name__ == '__main__':
     main()
