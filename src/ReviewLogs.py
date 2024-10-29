@@ -41,10 +41,10 @@ def insert_logsentries(data: list) -> str:
 
     # iterate through remaining list entries, pre-process the values as needed, and perform the inserts
     for entry in data:
-        scr_nm, file_dte, scr_typ, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(engine, entry)
+        prog_nm, file_dte, lang, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(engine, entry)
         csr = conn.cursor()
-        insert_qry = "INSERT INTO logs.Entries (ScriptName, FileDate, ScriptType, LogDate, LogTime, [Function], LevelID, [Message]) "
-        insert_qry = insert_qry + f"VALUES ('{scr_nm}', '{file_dte}', '{scr_typ}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
+        insert_qry = "INSERT INTO logs.Entries (ProgramName, FileDate, [Language], LogDate, LogTime, [Function], LevelID, [Message]) "
+        insert_qry = insert_qry + f"VALUES ('{prog_nm}', '{file_dte}', '{lang}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
         logging.debug(insert_qry)
         csr.execute(insert_qry)
         conn.commit()
@@ -109,7 +109,7 @@ def get_lasterror(engine):
     lvl_id = get_levelid(engine, logging.getLevelName(NOTIFICATION_LEVEL))
     typ_qry = f"""
 SELECT TOP 1
-ScriptName,
+ProgramName,
 Message
 
 FROM logs.Entries
@@ -122,7 +122,7 @@ ORDER BY LogID DESC
     logging.debug(typ_qry)
     df = pd.read_sql(typ_qry, engine)
     if len(df) > 0:
-        scr_name, msg = df.values[0]
+        prog_name, msg = df.values[0]
 
         try:
             dict_err = ast.literal_eval(msg)
@@ -130,7 +130,7 @@ ORDER BY LogID DESC
         except SyntaxError:
             err_desc = msg
 
-        err_msg = f'Last error script: {scr_name}, Reason: {err_desc}'
+        err_msg = f'Last error script: {prog_name}, Reason: {err_desc}'
 
     return err_msg
 
