@@ -8,10 +8,9 @@ import os
 from pathlib import Path
 import smtplib
 
-from automation import misc
 import pandas as pd
-import requests
 import sqlalchemy as sa
+from Utilities_Python import misc, notifications
 
 
 LEVEL_MAPPING = {
@@ -31,7 +30,7 @@ def insert_logsentries(data: list) -> str:
     This list of lists is formatted specifically like the entry_hdr variable from 'main' below
     """
 
-    conn_str = misc.get_config('connectionString_domainDB', CONFIG_FILE)
+    conn_str = os.getenv('ConnectionStringOdbcRelease')
     connection_url = sa.engine.URL.create(
         drivername='mssql+pyodbc',
         query={"odbc_connect": conn_str}
@@ -43,7 +42,7 @@ def insert_logsentries(data: list) -> str:
     for entry in data:
         prog_nm, file_dte, lang, lg_dte, lg_tme, fn, lvl_id, lg_msg = preprocess_logentry(engine, entry)
         csr = conn.cursor()
-        insert_qry = "INSERT INTO logs.Entries (ProgramName, FileDate, [Language], LogDate, LogTime, [Function], LevelID, [Message]) "
+        insert_qry = "INSERT INTO HuntHome.logs.Entries (ProgramName, FileDate, [Language], LogDate, LogTime, [Function], LevelID, [Message]) "
         insert_qry = insert_qry + f"VALUES ('{prog_nm}', '{file_dte}', '{lang}', '{lg_dte}', '{lg_tme}', '{fn}', '{lvl_id}', '{lg_msg}')"
         logging.debug(insert_qry)
         csr.execute(insert_qry)
@@ -64,7 +63,7 @@ def preprocess_logentry(engine, entry):
     file_dte = dt.datetime.strptime(file_dte, '%Y%m%d%H%M%S')
     file_dte = file_dte.strftime('%Y-%m-%d %H:%M:%S')
 
-    scr_typ = 'Python'  # TODO: Come up with a way to open this to non-Python logs someday
+    scr_typ = 'Python'
 
     # reformat yyyy-mm-dd HH:MM:SS,nnn to yyyy-mm-dd and HH:MM:SS.nnn
     lg_dte = entry[2]
@@ -83,7 +82,7 @@ def preprocess_logentry(engine, entry):
 
 
 def get_levelid(engine, level):
-    id_qry = f"SELECT LevelID FROM logs.Levels WHERE Level = '{level}'"
+    id_qry = f"SELECT LevelID FROM HuntHome.logs.Levels WHERE Level = '{level}'"
     logging.debug(id_qry)
     df = pd.read_sql(id_qry, engine)
     rtn = None
@@ -112,7 +111,7 @@ SELECT TOP 1
 ProgramName,
 Message
 
-FROM logs.Entries
+FROM HuntHome.logs.Entries
 
 WHERE LevelID >= {lvl_id}
 AND DateAdded >= DATEADD(MINUTE, -5, GETDATE())
@@ -218,16 +217,10 @@ def main():
         html = misc.list_to_html(notification_list)
 
         if notif_type == 'TELEGRAM':
-            tg_api_key = misc.get_config('telegramAPIKey', CONFIG_FILE)
-            tg_id = misc.get_config('telegramID', CONFIG_FILE)
             tg_msg = f'Error Notification: A total of {rec_ct} potential problems have been identified in the HuntHome logs'
             tg_msg = tg_msg + f'. {err_msg}'
-            url = f'https://api.telegram.org/bot{tg_api_key}'
-            params = {'chat_id': tg_id, 'text': tg_msg}
-            with requests.post(url + '/sendMessage', params=params) as resp:
-                cde = resp.status_code
-                if cde != 200:
-                    logging.error(f'Log Review Telegram Notification Failed: Response Code {cde}')
+            notifications.SendTelegramMessage(tg_msg)
+
         elif notif_type == 'EMAIL':
             smtp_server = misc.get_config('smtpServer', CONFIG_FILE)
             smtp_port = misc.get_config('smtpPort', CONFIG_FILE)
@@ -246,9 +239,11 @@ def main():
 
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.sendmail(from_addr=smtp_sendas, to_addrs=logging_recip, msg=message.as_string())
+
         elif notif_type == 'TEST':
             with open(os.path.join(Path(__file__).parents[1], 'test.html'), 'w') as f:
                 f.write(html)
+
         else:
             pass  # do nothing
 
