@@ -1,6 +1,10 @@
-.venv
-.vscode
+# directories
+.venv/
+.vscode/
 __pycache__
+logs/
+
+# files
 config.json
 test.html
 test.py
