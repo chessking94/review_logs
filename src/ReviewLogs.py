@@ -176,12 +176,13 @@ def main():
             try:
                 os.remove(log_orig)
             except PermissionError:
-                logging.info(f"Unable to delete '{lf}', file is in use")
+                # can't remove the file, in use. skip and move on and it'll be resolved later
+                continue
         else:
             # ASSUMPTION: First piece of the filename is the script that created the log, second is the timestamp
-            script_name = lf.split('_')[0]
+            log_script = lf.split('_')[0]
             log_timestamp = os.path.splitext(lf.split('_')[1])[0]
-            log_dir = os.path.join(log_root, script_name)
+            log_dir = os.path.join(log_root, log_script)
             if not os.path.isdir(log_dir):
                 os.mkdir(log_dir)
             log_new = os.path.join(log_dir, lf)
@@ -190,7 +191,7 @@ def main():
             with open(log_orig, mode='r', newline='\n') as logfile:
                 reader = csv.reader(logfile, delimiter='\t', quotechar='"')
                 for row in reader:
-                    entry = [script_name, log_timestamp, row[0], row[1], row[2], row[3]]
+                    entry = [log_script, log_timestamp, row[0], row[1], row[2], row[3]]
                     entry_list.append(entry)
                     level_weight = LEVEL_MAPPING[row[2]]
                     if level_weight >= NOTIFICATION_LEVEL:
@@ -201,8 +202,8 @@ def main():
                 os.rename(log_orig, log_new)
             except PermissionError:
                 # can't move the file, it's in use. remove those previously added entries and move on with life
-                entry_list = [f for f in entry_list if f[0] != script_name or f[1] != log_timestamp]
-                notification_list = [f for f in notification_list if f[0] != script_name or f[1] != log_timestamp]
+                entry_list = [f for f in entry_list if f[0] != log_script or f[1] != log_timestamp]
+                notification_list = [f for f in notification_list if f[0] != log_script or f[1] != log_timestamp]
 
     # write to db
     if len(entry_list) > 0:
@@ -245,7 +246,7 @@ def main():
                 f.write(html)
 
         else:
-            pass  # do nothing
+            logging.warning(f"Unexpected notification type '{notif_type}' provided")
 
     # delete old log files older than the days defined in the config file
     old_date = dt.datetime.now() - dt.timedelta(days=misc.get_config('retentionDays', CONFIG_FILE))
