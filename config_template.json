@@ -1,5 +1,5 @@
 {
-    "logRoot": "C:/logs",
+    "logRoot": "$(PYTHON_LOG_ROOT)",
     "notificationType": "Telegram",
     "retentionDays": 28,
     "smtpServer": "mail.domain.com",
