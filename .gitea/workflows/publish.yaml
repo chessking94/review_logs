@@ -2,7 +2,7 @@ name: Publish review_logs
 on:
   push:
     branches:
-      - automate04
+      - master
 
 defaults:
   run:
