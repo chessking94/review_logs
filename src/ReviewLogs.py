@@ -21,7 +21,7 @@ LEVEL_MAPPING = {
     'CRITICAL': logging.CRITICAL
 }
 NOTIFICATION_LEVEL = logging.WARNING
-CONFIG_FILE = os.path.join(Path(__file__).parents[1], 'config.json')
+CONFIG_FILE = os.path.join(Path(__file__).parents[1], 'config.json')  # test
 
 
 def insert_logsentries(data: list) -> str:
